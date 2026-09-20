@@ -9,13 +9,15 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from oss_contribution_finder import (
-    search_issues,
-    format_table,
-    format_markdown,
-    format_json,
+    _repo_info,
     dedupe_by_repo,
+    enrich_opportunities,
+    format_json,
+    format_markdown,
+    format_table,
     get_token,
     rate_limit,
+    search_issues,
 )
 
 
@@ -237,3 +239,77 @@ def test_api_request_retry_on_rate_limit(mock_urlopen):
         res = api_request("https://api.github.com/rate-limited-endpoint", retries=2, use_cache=False)
         assert res == {"success": True}
         assert mock_sleep.called
+
+
+def test_repo_info_with_existing_repo_dict():
+    opp = {"repo": {"full_name": "custom/repo", "stargazers_count": 99}}
+    info = _repo_info(opp)
+    assert info["full_name"] == "custom/repo"
+    assert info["stargazers_count"] == 99
+
+
+def test_repo_info_standard_api_url():
+    opp = {"repository_url": "https://api.github.com/repos/owner/my-repo"}
+    info = _repo_info(opp)
+    assert info["full_name"] == "owner/my-repo"
+    assert info["html_url"] == "https://github.com/owner/my-repo"
+
+
+def test_repo_info_trailing_slash():
+    opp = {"repository_url": "https://api.github.com/repos/owner/my-repo/"}
+    info = _repo_info(opp)
+    assert info["full_name"] == "owner/my-repo"
+    assert info["html_url"] == "https://github.com/owner/my-repo"
+
+
+def test_repo_info_query_params_and_fragments():
+    opp = {"repository_url": "https://api.github.com/repos/owner/my-repo?ref=main&page=1#heading"}
+    info = _repo_info(opp)
+    assert info["full_name"] == "owner/my-repo"
+    assert info["html_url"] == "https://github.com/owner/my-repo"
+
+
+def test_repo_info_git_suffix():
+    opp = {"repository_url": "https://github.com/owner/my-repo.git"}
+    info = _repo_info(opp)
+    assert info["full_name"] == "owner/my-repo"
+    assert info["html_url"] == "https://github.com/owner/my-repo"
+
+
+def test_repo_info_git_suffix_with_trailing_slash():
+    opp = {"repository_url": "https://github.com/owner/my-repo.git/"}
+    info = _repo_info(opp)
+    assert info["full_name"] == "owner/my-repo"
+
+
+def test_repo_info_ssh_format():
+    opp = {"repository_url": "git@github.com:owner/my-repo.git"}
+    info = _repo_info(opp)
+    assert info["full_name"] == "owner/my-repo"
+    assert info["html_url"] == "https://github.com/owner/my-repo"
+
+
+def test_repo_info_empty_or_missing_or_none():
+    assert _repo_info({})["full_name"] == "unknown/unknown"
+    assert _repo_info({"repository_url": None})["full_name"] == "unknown/unknown"
+    assert _repo_info({"repository_url": ""})["full_name"] == "unknown/unknown"
+    assert _repo_info({"repository_url": "   "})["full_name"] == "unknown/unknown"
+
+
+def test_repo_info_short_paths():
+    assert _repo_info({"repository_url": "https://github.com/"})["full_name"] == "unknown/unknown"
+    assert _repo_info({"repository_url": "https://github.com/owner"})["full_name"] == "unknown/unknown"
+
+
+@patch("oss_contribution_finder.get_repo_info")
+def test_enrich_opportunities_with_trailing_slashes_and_params(mock_get_repo):
+    mock_get_repo.return_value = {"full_name": "owner/repo", "stargazers_count": 10}
+    opportunities = [
+        {"repository_url": "https://api.github.com/repos/owner/repo/?param=1"},
+        {"repository_url": "https://github.com/owner/repo.git"},
+        {"repository_url": "invalid-url"},
+    ]
+    enriched = enrich_opportunities(opportunities)
+    assert len(enriched) == 1
+    assert enriched[0]["repo"]["full_name"] == "owner/repo"
+    mock_get_repo.assert_called_once_with("owner/repo", token=None)
