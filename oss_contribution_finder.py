@@ -154,14 +154,27 @@ def rate_limit(token: str | None = None) -> dict:
     return api_request(url, token=token)
 
 
-def _repo_info(opp: dict) -> dict:
+def _repo_info(opp: dict[str, Any]) -> dict[str, Any]:
     """Return repo metadata, falling back to repository_url when enrich was skipped."""
     repo = opp.get("repo")
     if isinstance(repo, dict) and repo.get("full_name"):
         return repo
-    repo_url = opp.get("repository_url", "")
-    parts = repo_url.rstrip("/").split("/")[-2:]
-    full_name = "/".join(parts) if len(parts) == 2 else "unknown/unknown"
+    repo_url = opp.get("repository_url") or ""
+    if not isinstance(repo_url, str):
+        repo_url = ""
+    parsed = urllib.parse.urlparse(repo_url.strip())
+    path = parsed.path.rstrip("/")
+    if path.endswith(".git"):
+        path = path[:-4].rstrip("/")
+    parts = [p for p in path.split("/") if p]
+    if len(parts) >= 2:
+        owner = parts[-2]
+        if ":" in owner:
+            owner = owner.split(":")[-1]
+        repo_name = parts[-1]
+        full_name = f"{owner}/{repo_name}"
+    else:
+        full_name = "unknown/unknown"
     return {
         "full_name": full_name,
         "html_url": f"https://github.com/{full_name}",
@@ -243,9 +256,8 @@ def enrich_opportunities(
     seen = set()
     enriched = []
     for opp in opportunities:
-        full_name = opp["repository_url"].split("/")[-2:]
-        full_name = "/".join(full_name)
-        if full_name in seen:
+        full_name = _repo_info(opp)["full_name"]
+        if full_name == "unknown/unknown" or full_name in seen:
             continue
         seen.add(full_name)
         if len(seen) > max_repos:
