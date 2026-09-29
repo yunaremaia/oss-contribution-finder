@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from oss_contribution_finder import (
     _repo_info,
+    check_contributor_friendly,
     dedupe_by_repo,
     enrich_opportunities,
     format_json,
@@ -313,3 +314,129 @@ def test_enrich_opportunities_with_trailing_slashes_and_params(mock_get_repo):
     assert len(enriched) == 1
     assert enriched[0]["repo"]["full_name"] == "owner/repo"
     mock_get_repo.assert_called_once_with("owner/repo", token=None)
+
+
+def test_contributor_signals_from_github_contents():
+    entries = [
+        {"name": "PULL_REQUEST_TEMPLATE.md", "type": "file"},
+        {"name": "ISSUE_TEMPLATE", "type": "dir"},
+    ]
+    with patch("oss_contribution_finder.api_request", side_effect=[{"type": "file"}, entries]) as api:
+        result = check_contributor_friendly("owner/repo")
+    assert result == {"has_contributing": True, "has_pr_template": True,
+                      "has_issue_template": True}
+    assert api.call_count == 2
+    assert api.call_args_list[0].args[0].endswith("/repos/owner/repo/contents/CONTRIBUTING.md")
+    assert api.call_args_list[1].args[0].endswith("/repos/owner/repo/contents/.github")
+
+
+def test_pr_template_directory_counts_without_single_file():
+    with patch("oss_contribution_finder.api_request", side_effect=[
+        {"error": 404}, [{"name": "PULL_REQUEST_TEMPLATE", "type": "dir"}]
+    ]):
+        assert check_contributor_friendly("owner/repo") == {
+            "has_contributing": False, "has_pr_template": True, "has_issue_template": False,
+        }
+
+
+def test_missing_github_directory_has_no_signals():
+    with patch("oss_contribution_finder.api_request", side_effect=[
+        {"error": 404}, {"error": 404}
+    ]):
+        assert check_contributor_friendly("owner/repo") == {
+            "has_contributing": False, "has_pr_template": False, "has_issue_template": False,
+        }
+
+
+def test_contents_error_is_not_treated_as_missing():
+    with patch("oss_contribution_finder.api_request", side_effect=[
+        {"error": 403, "rate_limited": True}, {"error": 404}
+    ]):
+        assert check_contributor_friendly("owner/repo")["has_contributing"] is None
+
+
+def test_wrong_contents_types_do_not_count_as_templates():
+    with patch("oss_contribution_finder.api_request", side_effect=[
+        {"type": "dir"}, [
+            {"name": "PULL_REQUEST_TEMPLATE.md", "type": "dir"},
+            {"name": "ISSUE_TEMPLATE", "type": "file"},
+        ]
+    ]):
+        assert check_contributor_friendly("owner/repo") == {
+            "has_contributing": False, "has_pr_template": False, "has_issue_template": False,
+        }
+
+
+def test_contributor_check_passes_token_and_cache_choice():
+    with patch("oss_contribution_finder.api_request", side_effect=[
+        {"error": 404}, {"error": 404}
+    ]) as api:
+        check_contributor_friendly("owner/repo", token="secret", use_cache=False)
+    assert all(call.kwargs == {"token": "secret", "use_cache": False}
+               for call in api.call_args_list)
+
+
+def test_cli_detects_signals_and_reuses_checks_for_same_repo(capsys):
+    items = [{"title": "One", "repository_url": "https://api.github.com/repos/a/b"},
+             {"title": "Two", "repository_url": "https://api.github.com/repos/a/b"}]
+    with patch("sys.argv", ["finder", "--no-enrich", "--format", "json"]), \
+         patch("oss_contribution_finder.get_token", return_value=None), \
+         patch("oss_contribution_finder.search_issues", return_value={"items": items}), \
+         patch("oss_contribution_finder.api_request", side_effect=[
+             {"error": 404}, [{"name": "ISSUE_TEMPLATE", "type": "dir"}]
+         ]) as api:
+        from oss_contribution_finder import main
+        main()
+    assert [item["contributor_friendly"] for item in json.loads(capsys.readouterr().out)] == [True, True]
+    assert api.call_count == 2
+
+
+def test_cli_require_contributing_filters_even_with_no_enrich(capsys):
+    items = [{"title": "Keep", "repository_url": "https://api.github.com/repos/a/yes"},
+             {"title": "Drop", "repository_url": "https://api.github.com/repos/a/no"},
+             {"title": "Invalid", "repository_url": "broken"}]
+    with patch("sys.argv", ["finder", "--no-enrich", "--require-contributing", "--format", "json"]), \
+         patch("oss_contribution_finder.get_token", return_value=None), \
+         patch("oss_contribution_finder.search_issues", return_value={"items": items}), \
+         patch("oss_contribution_finder.api_request", side_effect=[
+             {"type": "file"}, {"error": 404}, {"error": 404}, {"error": 404}
+         ]) as api:
+        from oss_contribution_finder import main
+        main()
+    output = json.loads(capsys.readouterr().out)
+    assert [item["title"] for item in output] == ["Keep"]
+    assert output[0]["contributor_friendly"] is True
+    assert api.call_count == 4
+
+
+def test_cli_without_filter_keeps_missing_repos(capsys):
+    item = {"title": "Still here", "repository_url": "https://api.github.com/repos/a/b"}
+    with patch("sys.argv", ["finder", "--no-enrich", "--format", "json"]), \
+         patch("oss_contribution_finder.get_token", return_value=None), \
+         patch("oss_contribution_finder.search_issues", return_value={"items": [item]}), \
+         patch("oss_contribution_finder.api_request", side_effect=[{"error": 404}, {"error": 404}]):
+        from oss_contribution_finder import main
+        main()
+    assert json.loads(capsys.readouterr().out)[0]["contributor_friendly"] is False
+
+
+def test_cli_api_error_warns_and_does_not_pass_filter(capsys):
+    item = {"title": "Unverified", "repository_url": "https://api.github.com/repos/a/b"}
+    with patch("sys.argv", ["finder", "--no-enrich", "--require-contributing", "--format", "json"]), \
+         patch("oss_contribution_finder.get_token", return_value=None), \
+         patch("oss_contribution_finder.search_issues", return_value={"items": [item]}), \
+         patch("oss_contribution_finder.api_request", side_effect=[
+             {"error": 403}, {"error": 404}
+         ]):
+        from oss_contribution_finder import main
+        main()
+    output = capsys.readouterr()
+    assert json.loads(output.out) == []
+    assert "could not be fully checked" in output.err
+
+
+def test_formatters_show_detected_signal():
+    item = {"title": "Fix", "html_url": "https://github.com/a/b/issues/1",
+            "repository_url": "https://api.github.com/repos/a/b", "contributor_friendly": True}
+    assert "Yes" in format_table([item])
+    assert "Contributor-friendly**: Yes" in format_markdown([item])
