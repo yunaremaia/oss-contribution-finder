@@ -26,7 +26,14 @@ oss-contribution-finder = "oss_contribution_finder:main"
 
 [project.urls]
 Homepage = "https://github.com/yunaremaia/oss-contribution-finder"
+Repository = "https://github.com/yunaremaia/oss-contribution-finder"
 Issues = "https://github.com/yunaremaia/oss-contribution-finder/issues"
+Changelog = "https://github.com/yunaremaia/oss-contribution-finder/blob/main/CHANGELOG.md"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
 
 [build-system]
 requires = ["hatchling"]
