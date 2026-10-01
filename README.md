@@ -1,5 +1,5 @@
 # OSS Contribution Finder
-[![CI](https://github.com/yunaremaia/oss-contribution-finder/actions/workflows/ci.yml/badge.svg)](https://github.com/yunaremaia/oss-contribution-finder/actions)
+[![CI](https://github.com/yunaremaia/oss-contribution-finder/actions/workflows/ci.yml/badge.svg)](https://github.com/yunaremaia/oss-contribution-finder/actions) ![py](https://img.shields.io/badge/python-3.10-blue.svg) ![release](https://img.shields.io/github/v/release/yunaremaia/oss-contribution-finder)
 [![License](https://img.shields.io/github/license/yunaremaia/oss-contribution-finder) ![Stars](https://img.shields.io/github/stars/yunaremaia/oss-contribution-finder)](https://github.com/yunaremaia/oss-contribution-finder/blob/main/LICENSE)
 
 
@@ -95,6 +95,19 @@ Eeztv1nCYUt1fwGWpzKC948gaWfjejYCAuLtUMgzDWbW
 
 Funding platforms are configured in [`.github/FUNDING.yml`](.github/FUNDING.yml).
 
+If this tool is useful to you, a star helps other people find it.
+
+## Related tools
+
+- **[gfi](https://github.com/yunaremaia/gfi)** — find well-scoped good first issues to start on
+- **[aipr](https://github.com/yunaremaia/aipr)** — pre-screen repos for AI contribution policy
+- **[ghstats](https://github.com/yunaremaia/ghstats)** — generate a GitHub stats dashboard
+- **[agent-guard](https://github.com/yunaremaia/agent-guard)** — enforce guardrails on AI agent tool calls
+
+Part of a family of focused, single-purpose developer tools — each one does one thing
+and does it well.
+
 ## License
 
 MIT
+
