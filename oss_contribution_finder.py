@@ -148,6 +148,46 @@ def get_repo_info(full_name: str, token: str | None = None) -> dict:
     return api_request(url, token=token)
 
 
+def check_contributor_friendly(
+    full_name: str, token: str | None = None, use_cache: bool = True,
+) -> dict[str, bool | None]:
+    """Detect root CONTRIBUTING.md and templates; None means an API error."""
+    base = f"{GITHUB_API}/repos/{full_name}/contents"
+    contributing = api_request(f"{base}/CONTRIBUTING.md", token=token, use_cache=use_cache)
+    github = api_request(f"{base}/.github", token=token, use_cache=use_cache)
+
+    def present(response: dict | list, kind: str) -> bool | None:
+        if isinstance(response, dict) and "error" in response:
+            return False if response["error"] == 404 else None
+        return isinstance(response, dict) and response.get("type") == kind
+
+    has_contributing = present(contributing, "file")
+    if isinstance(github, list):
+        has_pr_template = any(
+            isinstance(entry, dict)
+            and (
+                (entry.get("name") == "PULL_REQUEST_TEMPLATE.md" and entry.get("type") == "file")
+                or (entry.get("name") == "PULL_REQUEST_TEMPLATE" and entry.get("type") == "dir")
+            )
+            for entry in github
+        )
+        has_issue_template = any(
+            isinstance(entry, dict)
+            and entry.get("name") == "ISSUE_TEMPLATE"
+            and entry.get("type") == "dir"
+            for entry in github
+        )
+    else:
+        error = github.get("error") if isinstance(github, dict) else None
+        has_pr_template = has_issue_template = False if error == 404 else None
+
+    return {
+        "has_contributing": has_contributing,
+        "has_pr_template": has_pr_template,
+        "has_issue_template": has_issue_template,
+    }
+
+
 def rate_limit(token: str | None = None) -> dict:
     """Check current rate limit status."""
     url = f"{GITHUB_API}/rate_limit"
@@ -204,6 +244,8 @@ def format_markdown(opportunities: list[dict]) -> str:
         lines.append(f"- **Labels**: {', '.join(labels)}")
         lines.append(f"- **Stars**: ⭐ {repo.get('stargazers_count', '?')}")
         lines.append(f"- **Language**: {repo.get('language', 'Unknown')}")
+        if "contributor_friendly" in opp:
+            lines.append(f"- **Contributor-friendly**: {'Yes' if opp['contributor_friendly'] else 'No'}")
         lines.append(f"- **Updated**: {opp.get('updated_at', '?')[:10]}")
         lines.append("")
 
@@ -221,15 +263,18 @@ def format_table(opportunities: list[dict]) -> str:
         return "No opportunities found."
 
     lines = []
-    lines.append(f"{'#':>3} {'Repository':<40} {'Stars':>6} {'Title':<50}")
-    lines.append("-" * 105)
+    lines.append(f"{'#':>3} {'Repository':<40} {'Stars':>6} {'Title':<50} {'Friendly':<8}")
+    lines.append("-" * 114)
 
     for i, opp in enumerate(opportunities, 1):
         repo = _repo_info(opp)
         repo_name = repo["full_name"]
         stars = repo.get("stargazers_count", 0)
         title = opp["title"][:47] + "..." if len(opp["title"]) > 50 else opp["title"]
-        lines.append(f"{i:>3} {repo_name:<40} {stars:>6} {title:<50}")
+        friendly = "?"
+        if "contributor_friendly" in opp:
+            friendly = "Yes" if opp["contributor_friendly"] else "No"
+        lines.append(f"{i:>3} {repo_name:<40} {stars:>6} {title:<50} {friendly:<8}")
 
     return "\n".join(lines)
 
@@ -325,6 +370,11 @@ Examples:
         help="Skip fetching repo metadata (faster, less info)",
     )
     parser.add_argument(
+        "--require-contributing",
+        action="store_true",
+        help="Only show repositories with a root CONTRIBUTING.md",
+    )
+    parser.add_argument(
         "--check-rate-limit",
         action="store_true",
         help="Check rate limit and exit",
@@ -381,6 +431,32 @@ Examples:
     # Enrich with repo metadata
     if not args.no_enrich and token:
         items = enrich_opportunities(items, token=token, max_repos=args.limit)
+
+    # Search can return several issues per repo; check its files only once.
+    signals_by_repo: dict[str, dict[str, bool | None]] = {}
+    filtered = []
+    for item in items:
+        full_name = _repo_info(item)["full_name"]
+        parts = full_name.split("/") if isinstance(full_name, str) else []
+        if len(parts) != 2 or not all(parts) or full_name == "unknown/unknown":
+            signals = {
+                "has_contributing": None,
+                "has_pr_template": None,
+                "has_issue_template": None,
+            }
+        else:
+            if full_name not in signals_by_repo:
+                signals_by_repo[full_name] = check_contributor_friendly(
+                    full_name, token=token, use_cache=not args.no_cache,
+                )
+            signals = signals_by_repo[full_name]
+        if None in signals.values():
+            print(f"Warning: contributor signals could not be fully checked for {full_name}", file=sys.stderr)
+        if args.require_contributing and signals["has_contributing"] is not True:
+            continue
+        item["contributor_friendly"] = any(value is True for value in signals.values())
+        filtered.append(item)
+    items = filtered
 
     # Format output
     formatters = {

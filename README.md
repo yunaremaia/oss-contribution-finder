@@ -28,6 +28,9 @@ oss-contribution-finder --language go --format markdown >> opportunities.md
 # JSON output for automation
 oss-contribution-finder --language typescript --format json --limit 50
 
+# Only show issues from repositories with a root CONTRIBUTING.md
+oss-contribution-finder --language python --require-contributing
+
 # Check rate limit status
 oss-contribution-finder --check-rate-limit
 ```
@@ -46,6 +49,7 @@ oss-contribution-finder --check-rate-limit
 | `--limit`, `-n` | Max results | 20 |
 | `--format`, `-f` | Output (`table`, `markdown`, `json`) | `table` |
 | `--no-enrich` | Skip repo metadata (faster) | false |
+| `--require-contributing` | Only include repos with a root `CONTRIBUTING.md` | false |
 | `--check-rate-limit` | Show rate limit and exit | — |
 
 ## Authentication
@@ -57,6 +61,16 @@ export GH_TOKEN=ghp_your_token_here
 ```
 
 Without a token, searches are limited to 10 requests per minute.
+
+Results include a `contributor_friendly` boolean in JSON (and a Friendly column
+in the table / line in Markdown). It is true when a repository has a root
+`CONTRIBUTING.md`, a `.github/PULL_REQUEST_TEMPLATE.md` file, a
+`.github/PULL_REQUEST_TEMPLATE/` directory, or a `.github/ISSUE_TEMPLATE/`
+directory. Detection uses up to two additional GitHub API requests per unique
+repository, even with `--no-enrich` or no token. `--require-contributing`
+filters on the root file specifically, not on the broader friendly signal.
+API errors emit a warning; results may then be incomplete, and the filter
+excludes repositories whose root file it cannot verify.
 
 ## Examples
 
