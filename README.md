@@ -1,6 +1,5 @@
 # OSS Contribution Finder
 [![CI](https://github.com/yunaremaia/oss-contribution-finder/actions/workflows/ci.yml/badge.svg)](https://github.com/yunaremaia/oss-contribution-finder/actions)
-[![PyPI](https://img.shields.io/pypi/v/oss-contribution-finder)](https://pypi.org/project/oss-contribution-finder/)
 [![License](https://img.shields.io/github/license/yunaremaia/oss-contribution-finder) ![Stars](https://img.shields.io/github/stars/yunaremaia/oss-contribution-finder)](https://github.com/yunaremaia/oss-contribution-finder/blob/main/LICENSE)
 
 
@@ -71,6 +70,16 @@ oss-contribution-finder --language python --topic machine-learning --updated-aft
 # Generate a weekly digest
 oss-contribution-finder --language rust --format markdown --limit 25 > weekly-opportunities.md
 ```
+
+## Sponsoring
+
+`oss-contribution-finder` is MIT licensed and free to use. If it saved you time, you can support continued maintenance via GitHub Sponsors or by sending SOL to the project treasury wallet:
+
+```text
+Eeztv1nCYUt1fwGWpzKC948gaWfjejYCAuLtUMgzDWbW
+```
+
+Funding platforms are configured in [`.github/FUNDING.yml`](.github/FUNDING.yml).
 
 ## License
 
