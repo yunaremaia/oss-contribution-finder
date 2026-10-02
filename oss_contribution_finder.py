@@ -329,7 +329,7 @@ Examples:
     parser.add_argument(
         "--label",
         action="append",
-        default=["good first issue"],
+        default=None,
         help="Labels to filter (default: 'good first issue')",
     )
     parser.add_argument("--language", "-l", help="Programming language filter")
@@ -407,8 +407,9 @@ Examples:
         args.updated_after = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
 
     per_page = min(args.limit, 100)
+    labels = args.label if args.label else ["good first issue"]
     result = search_issues(
-        labels=args.label,
+        labels=labels,
         language=args.language,
         topic=args.topic,
         min_stars=args.min_stars,
