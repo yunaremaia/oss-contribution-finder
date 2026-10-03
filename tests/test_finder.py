@@ -8,8 +8,11 @@ from unittest.mock import patch, MagicMock
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import pytest
+
 from oss_contribution_finder import (
     _repo_info,
+    build_parser,
     check_contributor_friendly,
     dedupe_by_repo,
     enrich_opportunities,
@@ -20,6 +23,59 @@ from oss_contribution_finder import (
     rate_limit,
     search_issues,
 )
+
+
+def test_build_parser_defaults():
+    args = build_parser().parse_args([])
+    assert args.language is None
+    assert args.topic is None
+    assert args.min_stars is None
+    assert args.created_after is None
+    assert args.updated_after is None
+    assert args.sort == "updated"
+    assert args.limit == 20
+    assert args.format == "table"
+    assert args.output_file is None
+    assert args.no_enrich is False
+    assert args.require_contributing is False
+    assert args.check_rate_limit is False
+    assert args.retry == 3
+    assert args.no_cache is False
+    # --label defaults to None rather than ["good first issue"]; the fallback
+    # lives in main() so that --label REPLACES the default instead of being
+    # ANDed onto it (#60). Asserted as None on purpose: pinning a
+    # non-None default here would reintroduce #60.
+    assert args.label is None
+
+
+def test_build_parser_short_and_long_flags():
+    args = build_parser().parse_args(
+        ["-l", "python", "-t", "rust", "-n", "5", "-f", "json", "-o", "out.json"]
+    )
+    assert args.language == "python"
+    assert args.topic == "rust"
+    assert args.limit == 5
+    assert args.format == "json"
+    assert args.output_file == "out.json"
+
+
+def test_build_parser_label_replaces_default():
+    # #60: --label must REPLACE the default, not accumulate onto it.
+    # The parser itself stays out of it (default=None); main() substitutes.
+    assert build_parser().parse_args(["--label", "help wanted"]).label == ["help wanted"]
+    assert build_parser().parse_args(
+        ["--label", "help wanted", "--label", "docs"]
+    ).label == ["help wanted", "docs"]
+
+
+def test_build_parser_rejects_unknown_format():
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["--format", "yaml"])
+
+
+def test_build_parser_rejects_non_integer_limit():
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["--limit", "many"])
 
 
 def test_get_token_from_env():
