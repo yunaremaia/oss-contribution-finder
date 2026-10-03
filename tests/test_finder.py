@@ -27,7 +27,6 @@ from oss_contribution_finder import (
 
 def test_build_parser_defaults():
     args = build_parser().parse_args([])
-    assert args.label == ["good first issue"]
     assert args.language is None
     assert args.topic is None
     assert args.min_stars is None
@@ -42,6 +41,11 @@ def test_build_parser_defaults():
     assert args.check_rate_limit is False
     assert args.retry == 3
     assert args.no_cache is False
+    # --label defaults to None rather than ["good first issue"]; the fallback
+    # lives in main() so that --label REPLACES the default instead of being
+    # ANDed onto it (#60). Asserted as None on purpose: pinning a
+    # non-None default here would reintroduce #60.
+    assert args.label is None
 
 
 def test_build_parser_short_and_long_flags():
@@ -55,12 +59,13 @@ def test_build_parser_short_and_long_flags():
     assert args.output_file == "out.json"
 
 
-def test_build_parser_label_accumulates_onto_default():
-    # argparse `append` with a non-empty default appends to it rather than
-    # replacing it, so --label widens the filter instead of overriding it.
-    # Pinned as-is: changing it would be a behaviour change, not a refactor.
-    args = build_parser().parse_args(["--label", "help wanted", "--label", "docs"])
-    assert args.label == ["good first issue", "help wanted", "docs"]
+def test_build_parser_label_replaces_default():
+    # #60: --label must REPLACE the default, not accumulate onto it.
+    # The parser itself stays out of it (default=None); main() substitutes.
+    assert build_parser().parse_args(["--label", "help wanted"]).label == ["help wanted"]
+    assert build_parser().parse_args(
+        ["--label", "help wanted", "--label", "docs"]
+    ).label == ["help wanted", "docs"]
 
 
 def test_build_parser_rejects_unknown_format():
