@@ -314,7 +314,8 @@ def enrich_opportunities(
     return enriched
 
 
-def main():
+def build_parser() -> argparse.ArgumentParser:
+    """Build the CLI argument parser."""
     parser = argparse.ArgumentParser(
         description="Find OSS contribution opportunities",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -391,6 +392,11 @@ Examples:
         help="Disable response caching for API requests",
     )
 
+    return parser
+
+
+def main():
+    parser = build_parser()
     args = parser.parse_args()
     token = get_token()
 
