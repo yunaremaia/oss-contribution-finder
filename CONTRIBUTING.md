@@ -5,7 +5,7 @@
 1. Fork the repository
 2. Clone your fork
 3. Create a virtual environment: `python -m venv venv && source venv/bin/activate`
-4. Install dev dependencies: `pip install -e "[.dev]"`
+4. Install dev dependencies: `pip install -e ".[dev]"`
 5. Run tests: `pytest`
 
 ## Development Workflow
@@ -26,3 +26,11 @@
 
 - Write tests for new functionality in `tests/`
 - Ensure all tests pass before opening a PR
+
+## Code of Conduct
+
+This project follows a [Code of Conduct](CODE_OF_CONDUCT.md). By participating, you agree to uphold it.
+
+## Security
+
+Please do not report security vulnerabilities through public issues. See [SECURITY.md](SECURITY.md).
