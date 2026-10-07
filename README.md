@@ -13,6 +13,9 @@ Searches for issues labeled "good first issue" (or any label you choose), filter
 pip install git+https://github.com/yunaremaia/oss-contribution-finder.git
 ```
 
+> **Not yet on PyPI.** Install from git with the line above. A PyPI release is
+> pending; the distribution name `oss-contribution-finder` is currently free.
+
 ## Usage
 
 ```bash
