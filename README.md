@@ -54,13 +54,21 @@ oss-contribution-finder --check-rate-limit
 | `--no-enrich` | Skip repo metadata (faster) | false |
 | `--require-contributing` | Only include repos with a root `CONTRIBUTING.md` | false |
 | `--check-rate-limit` | Show rate limit and exit | — |
+| `--timeout` | Request timeout in seconds | 30 |
 
-## Authentication
+## Authentication and Proxy
 
 Set `GH_TOKEN` or `GITHUB_TOKEN` in your environment to avoid rate limits:
 
 ```bash
 export GH_TOKEN=ghp_your_token_here
+```
+
+Standard proxy environment variables (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`) are automatically respected for all outgoing requests via `urllib.request.ProxyHandler`. You can also configure request timeouts via the `--timeout` option (defaults to 30 seconds):
+
+```bash
+# Custom timeout for slow networks
+oss-contribution-finder --language python --timeout 60
 ```
 
 Without a token, searches are limited to 10 requests per minute.

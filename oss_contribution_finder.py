@@ -37,13 +37,23 @@ def get_token() -> str | None:
     return os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
 
 
+def get_opener() -> urllib.request.OpenerDirector:
+    """Build a urllib opener configured with ProxyHandler respecting proxy env vars."""
+    proxies = urllib.request.getproxies()
+    proxy_handler = urllib.request.ProxyHandler(proxies) if proxies else urllib.request.ProxyHandler()
+    opener = urllib.request.build_opener(proxy_handler)
+    urllib.request.install_opener(opener)
+    return opener
+
+
 def api_request(
     url: str,
     token: str | None = None,
     retries: int = 3,
     use_cache: bool = True,
+    timeout: float = 30.0,
 ) -> dict | list:
-    """Make an authenticated API request with rate limit handling, retry, and caching."""
+    """Make an authenticated API request with rate limit handling, retry, caching, proxy, and timeout."""
     if use_cache and url in _API_CACHE:
         return _API_CACHE[url]
 
@@ -54,10 +64,12 @@ def api_request(
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
+    get_opener()
+
     for attempt in range(max(1, retries)):
         req = urllib.request.Request(url, headers=headers)
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 data = json.loads(resp.read())
                 if use_cache:
                     _API_CACHE[url] = data
@@ -114,6 +126,7 @@ def search_issues(
     token: str | None = None,
     retries: int = 3,
     use_cache: bool = True,
+    timeout: float | None = None,
 ) -> dict:
     """Search GitHub issues with filters."""
     query_parts = ["state:open", "is:issue"]
@@ -139,22 +152,31 @@ def search_issues(
         f"&per_page={per_page}&page={page}"
     )
     url = f"{SEARCH_ENDPOINT}?{params}"
-    return api_request(url, token=token, retries=retries, use_cache=use_cache)
+    kwargs = {}
+    if timeout is not None:
+        kwargs["timeout"] = timeout
+    return api_request(url, token=token, retries=retries, use_cache=use_cache, **kwargs)
 
 
-def get_repo_info(full_name: str, token: str | None = None) -> dict:
+def get_repo_info(full_name: str, token: str | None = None, timeout: float | None = None) -> dict:
     """Get repository metadata."""
     url = f"{GITHUB_API}/repos/{full_name}"
-    return api_request(url, token=token)
+    kwargs = {}
+    if timeout is not None:
+        kwargs["timeout"] = timeout
+    return api_request(url, token=token, **kwargs)
 
 
 def check_contributor_friendly(
-    full_name: str, token: str | None = None, use_cache: bool = True,
+    full_name: str, token: str | None = None, use_cache: bool = True, timeout: float | None = None,
 ) -> dict[str, bool | None]:
     """Detect root CONTRIBUTING.md and templates; None means an API error."""
     base = f"{GITHUB_API}/repos/{full_name}/contents"
-    contributing = api_request(f"{base}/CONTRIBUTING.md", token=token, use_cache=use_cache)
-    github = api_request(f"{base}/.github", token=token, use_cache=use_cache)
+    kwargs = {}
+    if timeout is not None:
+        kwargs["timeout"] = timeout
+    contributing = api_request(f"{base}/CONTRIBUTING.md", token=token, use_cache=use_cache, **kwargs)
+    github = api_request(f"{base}/.github", token=token, use_cache=use_cache, **kwargs)
 
     def present(response: dict | list, kind: str) -> bool | None:
         if isinstance(response, dict) and "error" in response:
@@ -188,10 +210,13 @@ def check_contributor_friendly(
     }
 
 
-def rate_limit(token: str | None = None) -> dict:
+def rate_limit(token: str | None = None, timeout: float | None = None) -> dict:
     """Check current rate limit status."""
     url = f"{GITHUB_API}/rate_limit"
-    return api_request(url, token=token)
+    kwargs = {}
+    if timeout is not None:
+        kwargs["timeout"] = timeout
+    return api_request(url, token=token, **kwargs)
 
 
 def _repo_info(opp: dict[str, Any]) -> dict[str, Any]:
@@ -296,6 +321,7 @@ def enrich_opportunities(
     opportunities: list[dict],
     token: str | None = None,
     max_repos: int = 10,
+    timeout: float | None = None,
 ) -> list[dict]:
     """Fetch repo metadata for opportunities (rate-limit aware)."""
     seen = set()
@@ -307,7 +333,10 @@ def enrich_opportunities(
         seen.add(full_name)
         if len(seen) > max_repos:
             break
-        info = get_repo_info(full_name, token=token)
+        kwargs = {}
+        if timeout is not None:
+            kwargs["timeout"] = timeout
+        info = get_repo_info(full_name, token=token, **kwargs)
         if "error" not in info:
             opp["repo"] = info
             enriched.append(opp)
@@ -391,6 +420,12 @@ Examples:
         action="store_true",
         help="Disable response caching for API requests",
     )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=30.0,
+        help="Timeout in seconds for network requests (default: 30)",
+    )
 
     return parser
 
@@ -401,7 +436,7 @@ def main():
     token = get_token()
 
     if args.check_rate_limit:
-        rl = rate_limit(token=token)
+        rl = rate_limit(token=token, timeout=args.timeout)
         core = rl.get("resources", {}).get("core", {})
         search = rl.get("resources", {}).get("search", {})
         print(f"Core: {core.get('remaining', '?')}/{core.get('limit', '?')} (resets at {core.get('reset', '?')})")
@@ -426,6 +461,7 @@ def main():
         token=token,
         retries=args.retry,
         use_cache=not args.no_cache,
+        timeout=args.timeout,
     )
 
     if "error" in result:
@@ -437,7 +473,7 @@ def main():
 
     # Enrich with repo metadata
     if not args.no_enrich and token:
-        items = enrich_opportunities(items, token=token, max_repos=args.limit)
+        items = enrich_opportunities(items, token=token, max_repos=args.limit, timeout=args.timeout)
 
     # Search can return several issues per repo; check its files only once.
     signals_by_repo: dict[str, dict[str, bool | None]] = {}
@@ -454,7 +490,7 @@ def main():
         else:
             if full_name not in signals_by_repo:
                 signals_by_repo[full_name] = check_contributor_friendly(
-                    full_name, token=token, use_cache=not args.no_cache,
+                    full_name, token=token, use_cache=not args.no_cache, timeout=args.timeout,
                 )
             signals = signals_by_repo[full_name]
         if None in signals.values():
