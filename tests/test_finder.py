@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import pytest
 
 from oss_contribution_finder import (
+    __version__,
     _repo_info,
     build_parser,
     check_contributor_friendly,
@@ -59,6 +60,22 @@ def test_build_parser_short_and_long_flags():
     assert args.limit == 5
     assert args.format == "json"
     assert args.output_file == "out.json"
+
+
+def test_build_parser_version_flags(capsys):
+    parser = build_parser()
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["--version"])
+    assert exc.value.code == 0
+    captured = capsys.readouterr()
+    assert __version__ in (captured.out + captured.err)
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["-v"])
+    assert exc.value.code == 0
+    captured = capsys.readouterr()
+    assert __version__ in (captured.out + captured.err)
+
 
 
 def test_build_parser_label_replaces_default():

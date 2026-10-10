@@ -22,7 +22,13 @@ import urllib.request
 import urllib.parse
 import urllib.error
 from datetime import datetime, timedelta, timezone
+from importlib.metadata import PackageNotFoundError, version as _metadata_version
 from typing import Any
+
+try:
+    __version__ = _metadata_version("oss-contribution-finder")
+except PackageNotFoundError:
+    __version__ = "0.2.0"
 
 # Simple in-memory response cache to reduce duplicate API calls
 # Stores url -> (data, cached_at_timestamp) or legacy url -> data
@@ -353,7 +359,12 @@ Examples:
   oss-contribution-finder --language go --format markdown >> opportunities.md
         """,
     )
-    parser.add_argument("--version", action="version", version="%(prog)s 0.1.0")
+    parser.add_argument(
+        "-v",
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
     parser.add_argument(
         "--label",
         action="append",
