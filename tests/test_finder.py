@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
+import urllib.request
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -559,3 +560,58 @@ def test_formatters_show_detected_signal():
             "repository_url": "https://api.github.com/repos/a/b", "contributor_friendly": True}
     assert "Yes" in format_table([item])
     assert "Contributor-friendly**: Yes" in format_markdown([item])
+
+
+def test_build_parser_timeout():
+    parser = build_parser()
+    args = parser.parse_args(["--timeout", "45"])
+    assert args.timeout == 45.0
+
+
+def test_get_opener_configures_proxy(monkeypatch):
+    from oss_contribution_finder import get_opener
+    monkeypatch.setenv("HTTP_PROXY", "http://proxy.example.com:8080")
+    monkeypatch.setenv("HTTPS_PROXY", "https://proxy.example.com:8443")
+    opener = get_opener()
+    assert any(isinstance(h, urllib.request.ProxyHandler) for h in opener.handlers)
+
+
+def test_api_request_uses_timeout():
+    from oss_contribution_finder import api_request, _API_CACHE
+    _API_CACHE.clear()
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        mock_resp = MagicMock()
+        mock_resp.__enter__.return_value.read.return_value = b'{"status": "ok"}'
+        mock_urlopen.return_value = mock_resp
+        res = api_request("https://api.github.com/test-timeout", timeout=12.5, use_cache=False)
+        assert res == {"status": "ok"}
+        assert mock_urlopen.call_args.kwargs.get("timeout") == 12.5
+
+
+def test_local_proxy_integration():
+    import http.server
+    import threading
+    from oss_contribution_finder import api_request, _API_CACHE
+    _API_CACHE.clear()
+
+    class MockProxyHandler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"proxied": true}')
+
+        def log_message(self, format, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), MockProxyHandler)
+    port = server.server_port
+    thread = threading.Thread(target=server.handle_request, daemon=True)
+    thread.start()
+
+    proxy_url = f"http://127.0.0.1:{port}"
+    with patch.dict(os.environ, {"HTTP_PROXY": proxy_url, "http_proxy": proxy_url}):
+        res = api_request(f"http://127.0.0.1:{port}/api-test", use_cache=False, timeout=5.0)
+        assert res == {"proxied": True}
+    server.server_close()
+
