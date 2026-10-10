@@ -56,20 +56,28 @@ oss-contribution-finder --check-rate-limit
 | `--format`, `-f` | Output (`table`, `markdown`, `json`) | `table` |
 | `--no-enrich` | Skip repo metadata (faster) | false |
 | `--require-contributing` | Only include repos with a root `CONTRIBUTING.md` | false |
-| `--check-rate-limit` | Show rate limit and exit | - |
+| `--check-rate-limit` | Show rate limit and exit | — |
 | `--retry` | Max retry attempts on rate limits or network errors | 3 |
 | `--no-cache` | Disable in-memory API caching (default TTL: 1 hour) | false |
+| `--timeout` | Request timeout in seconds | 30 |
 
 ## Caching
 
 API responses are cached in memory with a default TTL of 1 hour (3600 seconds) to avoid redundant requests during repeated operations. Use `--no-cache` to bypass cached responses and fetch fresh data directly from GitHub.
 
-## Authentication
+## Authentication and Proxy
 
 Set `GH_TOKEN` or `GITHUB_TOKEN` in your environment to avoid rate limits:
 
 ```bash
 export GH_TOKEN=ghp_your_token_here
+```
+
+Standard proxy environment variables (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`) are automatically respected for all outgoing requests via `urllib.request.ProxyHandler`. You can also configure request timeouts via the `--timeout` option (defaults to 30 seconds):
+
+```bash
+# Custom timeout for slow networks
+oss-contribution-finder --language python --timeout 60
 ```
 
 Without a token, searches are limited to 10 requests per minute.
