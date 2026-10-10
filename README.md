@@ -42,6 +42,7 @@ oss-contribution-finder --check-rate-limit
 
 | Flag | Description | Default |
 |------|-------------|---------|
+| `--version`, `-v` | Show program version and exit | - |
 | `--label` | Labels to filter (repeatable) | `good first issue` |
 | `--language`, `-l` | Programming language | — |
 | `--topic`, `-t` | GitHub topic | — |
