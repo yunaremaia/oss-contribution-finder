@@ -41,6 +41,8 @@ def test_build_parser_defaults():
     assert args.check_rate_limit is False
     assert args.retry == 3
     assert args.no_cache is False
+    assert args.page == 1
+    assert args.per_page is None
     # --label defaults to None rather than ["good first issue"]; the fallback
     # lives in main() so that --label REPLACES the default instead of being
     # ANDed onto it (#60). Asserted as None on purpose: pinning a
@@ -275,6 +277,50 @@ def test_api_request_caching():
     res = api_request(test_url, use_cache=True)
     assert res == {"cached": True}
     _API_CACHE.clear()
+
+
+def test_api_request_cache_ttl_hit_and_expiration():
+    import time
+    from oss_contribution_finder import api_request, _API_CACHE
+    _API_CACHE.clear()
+    test_url = "https://api.github.com/ttl-endpoint"
+
+    # Cached 10 seconds ago with TTL 60 -> hit
+    now = time.time()
+    _API_CACHE[test_url] = ({"ttl": "fresh"}, now - 10)
+    res = api_request(test_url, use_cache=True, cache_ttl=60)
+    assert res == {"ttl": "fresh"}
+
+    # Cached 100 seconds ago with TTL 60 -> expired, evicted, triggers request
+    _API_CACHE[test_url] = ({"ttl": "stale"}, now - 100)
+    mock_resp = MagicMock()
+    mock_resp.__enter__.return_value.read.return_value = b'{"ttl": "renewed"}'
+    with patch("urllib.request.urlopen", return_value=mock_resp):
+        res = api_request(test_url, use_cache=True, cache_ttl=60)
+        assert res == {"ttl": "renewed"}
+        # Cache is refreshed with timestamp
+        assert test_url in _API_CACHE
+        data, ts = _API_CACHE[test_url]
+        assert data == {"ttl": "renewed"}
+        assert ts >= now - 1
+    _API_CACHE.clear()
+
+
+def test_build_parser_pagination_flags():
+    parser = build_parser()
+    args = parser.parse_args(["--page", "3", "--per-page", "50"])
+    assert args.page == 3
+    assert args.per_page == 50
+
+
+@patch("oss_contribution_finder.api_request")
+def test_search_issues_pagination_params(mock_api):
+    mock_api.return_value = {"total_count": 0, "items": []}
+    search_issues(per_page=25, page=4)
+    call_args = mock_api.call_args
+    url = call_args[0][0]
+    assert "per_page=25" in url
+    assert "page=4" in url
 
 
 @patch("urllib.request.urlopen")
