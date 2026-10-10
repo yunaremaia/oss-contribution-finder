@@ -43,17 +43,25 @@ oss-contribution-finder --check-rate-limit
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--label` | Labels to filter (repeatable) | `good first issue` |
-| `--language`, `-l` | Programming language | — |
-| `--topic`, `-t` | GitHub topic | — |
-| `--min-stars` | Minimum star count | — |
-| `--created-after` | Issues created after (YYYY-MM-DD) | — |
+| `--language`, `-l` | Programming language | - |
+| `--topic`, `-t` | GitHub topic | - |
+| `--min-stars` | Minimum star count | - |
+| `--created-after` | Issues created after (YYYY-MM-DD) | - |
 | `--updated-after` | Issues updated after (YYYY-MM-DD) | 30 days ago |
 | `--sort` | Sort field (`comments`, `reactions`, `updated`) | `updated` |
 | `--limit`, `-n` | Max results | 20 |
+| `--page` | Results page number | 1 |
+| `--per-page` | Items per page (1-100) | `min(limit, 100)` |
 | `--format`, `-f` | Output (`table`, `markdown`, `json`) | `table` |
 | `--no-enrich` | Skip repo metadata (faster) | false |
 | `--require-contributing` | Only include repos with a root `CONTRIBUTING.md` | false |
-| `--check-rate-limit` | Show rate limit and exit | — |
+| `--check-rate-limit` | Show rate limit and exit | - |
+| `--retry` | Max retry attempts on rate limits or network errors | 3 |
+| `--no-cache` | Disable in-memory API caching (default TTL: 1 hour) | false |
+
+## Caching
+
+API responses are cached in memory with a default TTL of 1 hour (3600 seconds) to avoid redundant requests during repeated operations. Use `--no-cache` to bypass cached responses and fetch fresh data directly from GitHub.
 
 ## Authentication
 

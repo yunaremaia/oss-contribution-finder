@@ -25,7 +25,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 # Simple in-memory response cache to reduce duplicate API calls
+# Stores url -> (data, cached_at_timestamp) or legacy url -> data
 _API_CACHE: dict[str, Any] = {}
+DEFAULT_CACHE_TTL: float = 3600.0
 
 
 GITHUB_API = "https://api.github.com"
@@ -42,10 +44,18 @@ def api_request(
     token: str | None = None,
     retries: int = 3,
     use_cache: bool = True,
+    cache_ttl: float | None = DEFAULT_CACHE_TTL,
 ) -> dict | list:
     """Make an authenticated API request with rate limit handling, retry, and caching."""
     if use_cache and url in _API_CACHE:
-        return _API_CACHE[url]
+        entry = _API_CACHE[url]
+        if isinstance(entry, tuple) and len(entry) == 2 and isinstance(entry[1], (int, float)):
+            cached_data, cached_at = entry
+            if cache_ttl is None or (time.time() - cached_at) < cache_ttl:
+                return cached_data
+            del _API_CACHE[url]
+        else:
+            return entry
 
     headers = {
         "Accept": "application/vnd.github+json",
@@ -60,7 +70,7 @@ def api_request(
             with urllib.request.urlopen(req, timeout=30) as resp:
                 data = json.loads(resp.read())
                 if use_cache:
-                    _API_CACHE[url] = data
+                    _API_CACHE[url] = (data, time.time())
                 return data
         except urllib.error.HTTPError as e:
             raw_body = e.read().decode(errors="ignore") if e.fp else ""
@@ -114,6 +124,7 @@ def search_issues(
     token: str | None = None,
     retries: int = 3,
     use_cache: bool = True,
+    cache_ttl: float | None = None,
 ) -> dict:
     """Search GitHub issues with filters."""
     query_parts = ["state:open", "is:issue"]
@@ -139,22 +150,38 @@ def search_issues(
         f"&per_page={per_page}&page={page}"
     )
     url = f"{SEARCH_ENDPOINT}?{params}"
-    return api_request(url, token=token, retries=retries, use_cache=use_cache)
+    kwargs: dict[str, Any] = {"token": token, "retries": retries, "use_cache": use_cache}
+    if cache_ttl is not None:
+        kwargs["cache_ttl"] = cache_ttl
+    return api_request(url, **kwargs)
 
 
-def get_repo_info(full_name: str, token: str | None = None) -> dict:
+def get_repo_info(
+    full_name: str,
+    token: str | None = None,
+    cache_ttl: float | None = None,
+) -> dict:
     """Get repository metadata."""
     url = f"{GITHUB_API}/repos/{full_name}"
-    return api_request(url, token=token)
+    kwargs: dict[str, Any] = {"token": token}
+    if cache_ttl is not None:
+        kwargs["cache_ttl"] = cache_ttl
+    return api_request(url, **kwargs)
 
 
 def check_contributor_friendly(
-    full_name: str, token: str | None = None, use_cache: bool = True,
+    full_name: str,
+    token: str | None = None,
+    use_cache: bool = True,
+    cache_ttl: float | None = None,
 ) -> dict[str, bool | None]:
     """Detect root CONTRIBUTING.md and templates; None means an API error."""
     base = f"{GITHUB_API}/repos/{full_name}/contents"
-    contributing = api_request(f"{base}/CONTRIBUTING.md", token=token, use_cache=use_cache)
-    github = api_request(f"{base}/.github", token=token, use_cache=use_cache)
+    kwargs: dict[str, Any] = {"token": token, "use_cache": use_cache}
+    if cache_ttl is not None:
+        kwargs["cache_ttl"] = cache_ttl
+    contributing = api_request(f"{base}/CONTRIBUTING.md", **kwargs)
+    github = api_request(f"{base}/.github", **kwargs)
 
     def present(response: dict | list, kind: str) -> bool | None:
         if isinstance(response, dict) and "error" in response:
@@ -381,6 +408,18 @@ Examples:
         help="Check rate limit and exit",
     )
     parser.add_argument(
+        "--page",
+        type=int,
+        default=1,
+        help="Results page number (default: 1)",
+    )
+    parser.add_argument(
+        "--per-page",
+        type=int,
+        default=None,
+        help="Results per page (1-100, default: min(limit, 100))",
+    )
+    parser.add_argument(
         "--retry",
         type=int,
         default=3,
@@ -412,7 +451,7 @@ def main():
     if not args.updated_after:
         args.updated_after = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
 
-    per_page = min(args.limit, 100)
+    per_page = args.per_page if args.per_page is not None else min(args.limit, 100)
     labels = args.label if args.label else ["good first issue"]
     result = search_issues(
         labels=labels,
@@ -423,6 +462,7 @@ def main():
         updated_after=args.updated_after,
         sort=args.sort,
         per_page=per_page,
+        page=args.page,
         token=token,
         retries=args.retry,
         use_cache=not args.no_cache,
